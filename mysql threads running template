@@ -1,0 +1,22 @@
+---
+templates:
+ - name: mysql_high_running_threads
+   version: 1
+   summary: High number of Threads on MySQL
+   expr: max_over_time(mysql_global_status_threads_running[1m]) > [[ .threshold ]]
+   params:
+     - name: threshold
+       summary: Connected threads maximum
+       unit: ""
+       type: float
+       range: [0, 2000]
+       value: 4
+   for: 1m
+   severity: critical
+   labels: 
+     custom_label: High number of threads connected
+   annotations:
+     summary: Threads running MySQL ({{ $labels.service_name }})
+     description: |-
+       {{ $value }} of Threads (more than [[ .threshold ]]) is running
+       by {{ $labels.service_name }} on {{ $labels.node_name }}.
