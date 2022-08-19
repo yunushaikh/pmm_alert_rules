@@ -1,0 +1,22 @@
+---
+templates:
+ - name: mysql_high_connections
+   version: 1
+   summary: High number of connections mysql
+   expr: max_over_time(mysql_global_status_threads_connected[1m]) / mysql_global_variables_max_connections * 100 > [[ .threshold ]]
+   params:
+     - name: threshold
+       summary: A percentage from configured maximum
+       unit: "%"
+       type: float
+       range: [0, 100]
+       value: 80
+   for: 1m
+   severity: critical
+   labels: 
+     cultom_label: High Connections MySQL 
+   annotations:
+     summary: High Connections MySQL ({{ $labels.service_name }})
+     description: |-
+       {{ $value }}% of connections (more than [[ .threshold ]]%) is used
+       by {{ $labels.service_name }} on {{ $labels.node_name }}.
