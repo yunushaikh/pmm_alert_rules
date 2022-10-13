@@ -1,0 +1,18 @@
+templates:
+- name: MySQL Slave replication lag
+version: 1
+summary: MySQL Replication Lag
+expr: mysql_slave_status_seconds_behind_master > [[ .threshold ]] and on (instance) mysql_slave_status_master_server_id > 0
+params:
+- name: threshold
+summary: Number of seconds the slave is behind the masters
+unit: "s"
+type: float
+value: 10
+for: 5m
+severity: warning
+annotations:
+summary: MySQL replication lag ({{ $labels.service_name }})
+description: |-
+{{ $value }} of replication lag (more than [[ .threshold ]]) is happened
+on {{ $labels.node_name }}.
