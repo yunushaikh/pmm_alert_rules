@@ -1,0 +1,490 @@
+# vim: set ft=yaml
+groups:
+- name: Managed Services - Basic Alert
+  rules:
+
+  - alert: VmalertAlertsError
+    expr: vmalert_alerts_error > 0
+    for: 5m
+    labels:
+      severity: event
+      service: generic
+      runbook: https://localhost/runbooks/#VmalertAlertsError
+    annotations:
+    
+      summary: "Sending Vmalert alerts error to Kibana."
+      description: "Sending Vmalert alerts error to Kibana."
+    
+- name: Managed Services - Node Alerts
+  rules:
+
+  - alert: DiskSpaceWarning
+    expr: ((node_filesystem_avail_bytes{fstype!~"^(tmpfs|fuse.*|rootfs|selinuxfs|autofs|rpc_pipefs)$"} * 100) / node_filesystem_size_bytes <= 20 and (ttf(node_filesystem_avail_bytes{fstype!~"^(tmpfs|fuse.*|rootfs|selinuxfs|autofs|rpc_pipefs)$"}[10d]) / (60*60*24)) < 10) or (node_filesystem_avail_bytes{fstype!~"^(tmpfs|fuse.*|rootfs|selinuxfs|autofs|rpc_pipefs)$"} * 100) / node_filesystem_size_bytes <= 5
+    for: 5m
+    labels:
+      severity: event
+      service: generic
+      runbook: https://localhost/runbooks/#DiskSpaceWarning
+    annotations:
+    
+      summary: "Warning - Instance is running out of space soon. - {{ $labels.mountpoint }} on (instance {{ $labels.node_name }})."
+      description: "Free up some space or enlarge the device"
+    
+  - alert: DiskSpaceCritical
+    expr: ((node_filesystem_avail_bytes{fstype!~"^(tmpfs|fuse.*|rootfs|selinuxfs|autofs|rpc_pipefs)$"} * 100) / node_filesystem_size_bytes <= 10 and (ttf(node_filesystem_avail_bytes{fstype!~"^(tmpfs|fuse.*|rootfs|selinuxfs|autofs|rpc_pipefs)$"}[10d]) / (60*60*24)) < 10) or (node_filesystem_avail_bytes{fstype!~"^(tmpfs|fuse.*|rootfs|selinuxfs|autofs|rpc_pipefs)$"} * 100) / node_filesystem_size_bytes <= 5
+    for: 5m
+    labels:
+      severity: critical
+      service: generic
+      runbook: https://localhost/runbooks/#DiskSpaceCritical
+    annotations:
+    
+      summary: "Critical - Instance is running out of space. - {{ $labels.mountpoint }} on (instance {{ $labels.node_name }}}) ."
+      description: "Disk is almost full ( {{ $labels.mountpoint }} )"
+    
+  - alert: NodeLowFreeMemory
+    expr: 100*(node_memory_availabe or (node_memory_MemFree_bytes+node_memory_Buffers_bytes+node_memory_Cached_bytes))/node_memory_MemTotal_bytes < 8
+    for: 5m
+    labels:
+      severity: critical
+      service: generic
+      runbook: https://localhost/runbooks/#MySQLLowFreeMemory
+    annotations:
+    
+      summary: "CRITICAL - The amount of free memory on the host is very low (instance {{ $labels.node_name }})"
+      description: "Check which processes are using the memory (RSS).  If the top one is mysqld, lower a bit the innodb_buffer_pool_size."
+    
+  - alert: NodeLowFreeMemoryTrend
+    expr: mysql_global_status_uptime > 3600 and 100*(predict_linear(node_memory_MemAvailable_bytes[1h], 120*60) or (predict_linear(node_memory_MemFree_bytes[1h], 120*60) + predict_linear(node_memory_Buffers_bytes[1h], 120*60) + predict_linear(node_memory_Cached_bytes[1h], 120*60)))/node_memory_MemTotal_bytes < 5
+    for: 5m
+    labels:
+      severity: critical
+      service: generic
+      runbook: https://localhost/runbooks/#MySQLLowFreeMemoryTrend
+    annotations:
+    
+      summary: "CRITICAL - The memory usage is increasing on (instance {{ $labels.node_name }}), at the current rate, available memory will below 5 percent in 2 hours"
+      description: "Check which processes are increasing their memory usage (RSS).  If MySQL has been restarted recently, this could be normal."
+    
+  - alert: NodeIOUtilization
+    expr: rate(node_disk_io_time_ms[1m]) > 950
+    for: 10m
+    labels:
+      severity: critical
+      service: generic
+      runbook: https://localhost/runbooks/#NodeIOUtilization
+    annotations:
+    
+      summary: "CRITICAL - storage on (instance {{ $labels.node_name }}) spent more than 95 percent of its time busy"
+      description: "Check if a process is not using the disk too heavily"
+    
+  - alert: NodeCpuUtilization
+    expr: (1-sum(rate(node_cpu_seconds_total{mode='idle'}[1m])) by (node_name)/count(node_cpu_seconds_total{mode='idle'}) by (node_name))*100 > 90
+    for: 10m
+    labels:
+      severity: critical
+      service: generic
+      runbook: https://localhost/runbooks/#NodeCpuUtilization
+    annotations:
+    
+      summary: "CRITICAL - CPU usage on (instance {{ $labels.node_name }}) is above 80 percent"
+      description: "Check if a process is not using too much CPU"
+    
+  - alert: NodeLoad
+    expr: max_over_time(node_load1[2m])  / on (node_name) (count(node_cpu_seconds_total{mode="idle"}) by (node_name)) > 20
+    for: 10m
+    labels:
+      severity: critical
+      service: generic
+      runbook: https://localhost/runbooks/#NodeLoad
+    annotations:
+    
+      summary: "CRITICAL - The normalized 1 minute load average on (instance {{ $labels.node_name }}) is higher than 3"
+      description: "Check if a process is not using too much CPU or blocked"
+    
+  - alert: NodeNetworkErrors
+    expr: 100*sum(rate(node_network_transmit_errs_total[1m])+rate(node_network_receive_errs_total[1m])) by (node_name) / on (node_name) sum(rate(node_network_transmit_packets_total[1m])+rate(node_network_receive_packets_total[1m])) by (node_name) > 5
+    for: 10m
+    labels:
+      severity: critical
+      service: generic
+      runbook: https://localhost/runbooks/#NodeNetworkErrors
+    annotations:
+    
+      summary: "CRITICAL - There has been more than 5 percent of network errors on (instance {{ $labels.node_name }}) over the last minute"
+      description: "Investigate the source of the network errors"
+    
+
+- name: Managed Services - Backup Alerts
+  rules:
+
+  - alert: StaleBackup
+    expr: time() -  msp_backup_last_report_ts{type!~"Oplog|Binlogs"} > 93600 and on(type, alias) msp_backup_enabled == 1
+    for: 5m
+    labels:
+      severity: critical
+      service: backup
+      runbook: https://localhost/runbooks/#StaleBackup
+    annotations:
+    
+      summary: "CRITICAL - There is no {{ $labels.type }} backup on {{ $labels.alias }} node in the last 26h."
+      description: "Check backup process and backup log files."
+    
+  - alert: StaleUpload
+    expr: time() -  msp_upload_last_report_ts{type!~"Oplog|Binlogs"} > 93600 and on(type, alias) msp_upload_enabled == 1
+    for: 5m
+    labels:
+      severity: critical
+      service: backup
+      runbook: https://localhost/runbooks/#StaleUpload
+    annotations:
+    
+      summary: "CRITICAL - There is no {{ $labels.type }} upload on {{ $labels.alias }} node in the last 26h."
+      description: "Check backup process and upload log files."
+    
+  - alert: StaleUploadLog
+    expr: time() -  msp_upload_last_report_ts{type=~"Oplog|Binlogs"} > 3900 and on(type, alias) msp_upload_enabled == 1
+    for: 5m
+    labels:
+      severity: critical
+      service: backup
+      runbook: https://localhost/runbooks/#StaleUploadLog
+    annotations:
+    
+      summary: "CRITICAL - There is no {{ $labels.type }} upload on {{ $labels.alias }} node in the last 1h."
+      description: "Check backup process and upload log files."
+    
+  - alert: StaleBackupLog
+    expr: time() -  msp_backup_last_report_ts{type=~"Oplog|Binlogs"} > 3900 and on(type, alias) msp_backup_enabled == 1
+    for: 5m
+    labels:
+      severity: critical
+      service: backup
+      runbook: https://localhost/runbooks/#StaleBackupLog
+    annotations:
+    
+      summary: "CRITICAL - There is no {{ $labels.type }} backup on {{ $labels.alias }} node in the last 1h."
+      description: "Check backup process and backup log files."
+    
+  - alert: BackupFailed
+    expr: msp_backup_status > 0 and on(type, alias) msp_backup_enabled == 1
+    for: 5m
+    labels:
+      severity: critical
+      service: backup
+      runbook: https://localhost/runbooks/#BackupFailed
+    annotations:
+    
+      summary: "CRITICAL - The {{ $labels.type }} backup is failed on (instance {{ $labels.alias }}) node."
+      description: "Check backup process and backup log files."
+    
+
+
+- name: Managed Services - MySQL Alerts
+  rules:
+
+  - alert: MySQLScrapingIssues
+    expr: rate(scrape_samples_scraped{service_type="mysql", job=~"mysqld_exporter_agent.*hr-5s"}[1m]) > 0.15
+    for: 1m
+    labels:
+      severity: critical
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLScrapingIssues
+    annotations:
+    
+      summary: "CRITICAL - The MySQL exporter is showing signs of issues (instance {{ $labels.node_name }})"
+      description: "The exporter behaviour looks odd and is changing. Please investigate"
+    
+  - alert: MySQLInstanceNotAvailable
+    expr: min(mysql_up) without (job) < 1
+    for: 5m
+    labels:
+      severity: critical
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLInstanceNotAvailable
+    annotations:
+    
+      summary: "CRITICAL - The MySQL service is unreachable (instance {{ $labels.node_name }})"
+      description: "The mysqld service appears to be down, or unreachable. Please investigate"
+    
+  - alert: MySQLTooManyConnections
+    expr: mysql_global_status_threads_connected / on (node_name) mysql_global_variables_max_connections * 100 > 95
+    for: 5m
+    labels:
+      severity: critical
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLTooManyConnections
+    annotations:
+    
+      summary: "CRITICAL - MySQL has too many connections on (instance {{ $labels.node_name }})"
+      description: "The server has too many connections. Over the last minute, {{ $value }} percent was used"
+    
+  - alert: MySQLWillOverloadConnectionsSoon
+    expr: (predict_linear(mysql_global_status_threads_connected[2m], 60 * 30) / on (node_name) mysql_global_variables_max_connections) * 100 > 90
+    for: 5m
+    labels:
+      severity: critical
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLWillOverloadConnectionsSoon
+    annotations:
+    
+      summary: "CRITICAL - MySQL will overload connections soon on (instance {{ $labels.node_name }})"
+      description: "The server will reach its connection limit in less than 30 minutes, check why connections are not released."
+    
+  - alert: MySQLTableLockWaitHigh
+    expr: (100 * mysql_global_status_table_locks_waited)/(mysql_global_status_table_locks_waited + mysql_global_status_table_locks_immediate) > 60
+    for: 10m
+    labels:
+      severity: critical
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLTableLockWaitHigh
+    annotations:
+    
+      summary: "CRITICAL - MySQL has high table locks"
+      description: "MYSQL has high table lock waits of {{ $value }} percent"
+    
+  - alert: MySQLInnoDBCheckpointAge
+    expr: 100*avg_over_time(mysql_global_status_innodb_checkpoint_age[1m])/mysql_global_status_innodb_checkpoint_max_age > 90
+    for: 1m
+    labels:
+      severity: critical
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLInnoDBCheckpointAge
+    annotations:
+    
+      summary: "CRITICAL - InnoDB checkpoint age is high on (instance {{ $labels.node_name }})"
+      description: "The InnoDB checkpoint age has been over {{ $value }} percent for the last minute. Common issues could be server IO problems, transactions left open for a long time and too small InnoDB log files."
+    
+  - alert: MySQLInnoDBFlushingSaturation
+    expr: 100*rate(mysql_global_status_innodb_data_writes[30m]) / on (node_name) avg_over_time(mysql_global_variables_innodb_io_capacity_max[30m]) > 90
+    for: 1m
+    labels:
+      severity: critical
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLInnoDBFlushingSaturation
+    annotations:
+    
+      summary: "CRITICAL - InnoDB has been flushing pages at a rate close to the max on (instance {{ $labels.node_name }}) over the last minute"
+      description: "The InnoDB flushing rate is too high, either enlarge innodb_log_file_size or, if there is spare IO capacity, raise innodb_io_capacity_max."
+    
+  - alert: MySQLTableOpen
+    expr: rate(mysql_global_status_open_tables[5m])/ on (node_name) mysql_global_variables_innodb_io_capacity > 0.3
+    for: 10m
+    labels:
+      severity: critical
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLTableOpen
+    annotations:
+    
+      summary: "CRITICAL - MySQL is opening too many tables on (instance {{ $labels.node_name }})"
+      description: "MySQL is opening too many tables, either increase table_open_cache or, lower table_open_cache_instances.  Check the mysqld ulimits (nofile) is greater than table_open_cache as if reached, it could freeze MySQL"
+    
+  - alert: MySQLTableOpenDefinition
+    expr: rate(mysql_global_status_opened_table_definitions[5m])/ on (node_name) mysql_global_variables_innodb_io_capacity > 0.15
+    for: 10m
+    labels:
+      severity: critical
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLTableOpenDefinition
+    annotations:
+    
+      summary: "CRITICAL - MySQL is opening too many table definitions on (instance {{ $labels.node_name }})"
+      description: "MySQL is opening too many table defintions, try increasing table_open_definition_cache"
+    
+  - alert: MySQLThreadCreate
+    expr: rate(mysql_global_status_threads_created[1m]) > 10
+    for: 5m
+    labels:
+      severity: critical
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLThreadCreate
+    annotations:
+    
+      summary: "CRITICAL - MySQL is creating more than 10 threads per second on (instance {{ $labels.node_name }})"
+      description: "MySQL is creating more than 10 thread per second, increase thread_cache_size"
+    
+  - alert: MySQLRowLockTime
+    expr: rate(mysql_global_status_innodb_row_lock_time[1m])/on (node_name) (count(node_cpu_seconds_total{mode='idle'}) by (node_name)) > 150
+    for: 10m
+    labels:
+      severity: critical
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLRowLockTime
+    annotations:
+    
+      summary: "CRITICAL - The row lock time on (instance {{ $labels.node_name }}) is at $value ms per core"
+      description: "Check if there are unusual queries running."
+    
+  - alert: MySQLThreadBlockedTime
+    expr: avg_over_time(mysql_info_schema_threads_seconds{state="waiting for lock"}[1m])/on (node_name) (count(node_cpu_seconds_total{mode='idle'}) by (node_name)) > 0.1
+    for: 5m
+    labels:
+      severity: warning
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLThreadBlockedTime
+    annotations:
+    
+      summary: "WARNING - MySQL threads on (instance {{ $labels.node_name }}) spend more than 10 percent of the waiting of a lock"
+      description: "Check if there are unusual queries running."
+    
+  - alert: MySQLNumThreadBlocked
+    expr: avg_over_time(mysql_info_schema_threads_seconds{state="waiting for lock"}[1m])/on (node_name) (count(node_cpu_seconds_total{mode='idle'}) by (node_name)) > 0.4
+    for: 10m
+    labels:
+      severity: critical
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLNumThreadBlocked
+    annotations:
+    
+      summary: "CRITICAL - MySQL threads on (instance {{ $labels.node_name }}) spend more than 10 percent of the waiting of a lock"
+      description: "Check if there are unusual queries running."
+    
+  - alert: MySQLTooManyRowsRead
+    expr: rate(mysql_global_status_innodb_row_ops_total{operation="read"}[5m]) / on (node_name) (count(node_cpu_seconds_total{mode='idle'}) by (node_name)) > 700000
+    for: 10m
+    labels:
+      severity: critical
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLTooManyRowsRead
+    annotations:
+    
+      summary: "CRITICAL - MySQL is reading more than 700k rows per core on (instance {{ $labels.node_name }})"
+      description: "Check which queries are reading too many rows"
+    
+  - alert: MySQLTooManyThreadsRunning
+    expr: (avg_over_time(mysql_global_status_threads_running[1m]) - 2) / on (node_name) count(node_cpu_seconds_total{mode="idle"}) by (node_name) > 3
+    for: 10m
+    labels:
+      severity: critical
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLTooManyThreadsRunning
+    annotations:
+    
+      summary: "CRITICAL - MySQL has more than 3 threads running per core on (instance {{ $labels.node_name }})"
+      description: "Check why there are so many threads running"
+    
+  - alert: MySQLQueryPileUp
+    expr: 100 * irate(mysql_global_status_threads_running[15s])/ on (node_name) min_over_time(mysql_global_status_threads_running[15s]) > 15
+    for: 15m
+    labels:
+      severity: critical
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLQueryPileUp
+    annotations:
+    
+      summary: "CRITICAL - The number of threads running is increasing very rapidly on (instance {{ $labels.node_name }})"
+      description: "Investigate the source of the network errors"
+    
+  - alert: MySQLReplicaLag
+    expr: max_over_time(mysql_slave_status_seconds_behind_master[15s]) - max_over_time(mysql_slave_status_sql_delay[15s]) > 120
+    for: 1m
+    labels:
+      severity: critical
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLReplicaLag
+    annotations:
+    
+      summary: "CRITICAL - MySQL replication is lagging by more than 2 minutes on (instance {{ $labels.node_name }})"
+      description: "See what is blocking or slowing down replication"
+    
+  - alert: MySQLReplicaIOThread
+    expr: min_over_time(mysql_slave_status_slave_io_running[15s]) < 0
+    for: 5m
+    labels:
+      severity: critical
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLReplicaIOThread
+    annotations:
+    
+      summary: "WARNING - The MySQL Replication IO thread is stopped on (instance {{ $labels.node_name }}) for 5 minutes."
+      description: "Investigate why it is not connected to the primary"
+    
+  - alert: MySQLReplicaSqlThread
+    expr: min_over_time(mysql_slave_status_slave_sql_running[15s]) < 0
+    for: 5m
+    labels:
+      severity: critical
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLReplicaSqlThread
+    annotations:
+    
+      summary: "CRITICAL - The MySQL Replication SQL thread is stopped on (instance {{ $labels.node_name }}) for 5 minutes."
+      description: "Investigate why it is stopped"
+    
+  - alert: MySQLInnoDBFlushingSaturation
+    expr: 100*rate(mysql_global_status_innodb_data_writes[5m])/ on (node_name) avg_over_time(mysql_global_variables_innodb_io_capacity_max[5m]) > 60
+    for: 1m
+    labels:
+      severity: warning
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLInnoDBFlushingSaturation
+    annotations:
+    
+      summary: "WARNING - InnoDB has been flushing pages at a rate close to the max on (instance {{ $labels.node_name }}) over the last minute"
+      description: "The InnoDB flushing rate is high, either enlarge innodb_log_file_size or, if there is spare IO capacity, raise innodb_io_capacity_max."
+    
+  - alert: MySQLReplicaReadOnly
+    expr: (avg_over_time(mysql_slave_status_slave_io_running[1m]) == 1 or on (node_name) avg_over_time(mysql_slave_status_slave_sql_running[1m]) == 1 or on (node_name) avg_over_time(mysql_perf_schema_replication_group_member_info{member_role="SECONDARY",member_state="ONLINE"})[1m]) and on (node_name) min_over_time(mysql_global_variables_read_only[1m]) == 0
+    for: 1m
+    labels:
+      severity: warning
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLReplicaReadOnly
+    annotations:
+    
+      summary: "WARNING - The MySQL on (instance {{ $labels.node_name }}) is a replica and is not read-only"
+      description: "It is assumed that replicas should be in Read Only mode so as to prevent possible data corruption."
+    
+  - alert: MySQLDeadlock
+    expr: rate(mysql_info_schema_innodb_metrics_lock_lock_deadlocks_total[1s])> 1
+    for: 1m
+    labels:
+      severity: warning
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLDeadlock
+    annotations:
+    
+      summary: "WARNING - The MySQL on (instance {{ $labels.node_name }}) is facing a Deadlock"
+      description: "Review the conflict with the transaction"
+    
+  - alert: MySQLAutoIncrementExhaustion
+    expr: (mysql_info_schema_auto_increment_column*100/mysql_info_schema_auto_increment_column_max) > 80
+    for: 1m
+    labels:
+      severity: critical
+      service: mysql
+      runbook: https://localhost/runbooks/#MySQLAutoIncrementExhaustion
+    annotations:
+    
+      summary: "CRITICAL - The {{ $labels.schema }}.{{ $labels.table }} table on (instance {{ $labels.node_name }}) is near to reach Auto Increment exhaustion"
+      description: "Modify the numeric type of the field"
+    
+  - alert: MySQLPrimaryReadOnly
+    expr: (mysql_global_variables_read_only unless on (node_name) ((mysql_slave_status_master_server_id) or (avg_over_time(mysql_perf_schema_replication_group_member_info{member_role="SECONDARY",member_state="ONLINE"})[1m]))) > 0
+    for: 1m
+    labels:
+      severity: critical
+      service: mysql
+      runbook: https://localhost/runbooks/#ReadOnlyGuardian
+    annotations:
+    
+      summary: "CRITICAL - The MySQL on (instance {{ $labels.node_name }}) is set to Read Only but this is a primary or standalone."
+      description: "Check why read_only flag is enabled on this Primary node and set it back to 0."
+    
+
+
+
+- name: Managed Services - Node Agent Alerts
+  rules:
+
+  - alert: NodeAgentDown
+    expr: up == 0
+    for: 10m
+    labels:
+      severity: critical
+      service: agent
+      runbook: https://localhost/runbooks/#NodeAgentDown
+    annotations:
+    
+      summary: "CRITICAL - The NodeAgentDown ({{ $labels.agent_type }}) is unreachable (instance {{ $labels.node_name }})"
+      description: "The NodeAgentDown {{ $labels.node_type }} appears to be down, or unreachable. Please investigate"
